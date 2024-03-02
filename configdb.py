@@ -27,6 +27,7 @@ class Schema(DatabaseObject):
 
     def delete(self):
         self.cursor.execute(f"""DROP SCHEMA IF EXISTS {self.dbname};""")
+        
     
 
 class Table(DatabaseObject):
