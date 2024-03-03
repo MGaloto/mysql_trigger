@@ -1,6 +1,5 @@
 
 import mysql.connector
-from dotenv import load_dotenv
 from datetime import datetime
 from faker import Faker
 import time
@@ -23,7 +22,7 @@ class TriggerProcess():
         self.cursor = self.conn.cursor()
         self.dbname = 'database_prueba'
         self.tablename = 'clientes'
-        self.insert_rows = 100
+        self.insert_rows = 400
         self.pkupdate = 1
         self.pkinsert = 999999
 
@@ -83,14 +82,14 @@ class TriggerProcess():
         return int(max_id)
     
     def delete(self, table, custom_table, trigger, schema):
+        logger.info(self.bcolors.YELLOW+f"Delete trigger.." +self.bcolors.RESET)
+        trigger.delete()
+
         logger.info(self.bcolors.YELLOW+f"Delete table.." +self.bcolors.RESET)
         table.delete()
 
         logger.info(self.bcolors.YELLOW+f"Delete custom table.." +self.bcolors.RESET)
         custom_table.delete()
-
-        logger.info(self.bcolors.YELLOW+f"Delete trigger.." +self.bcolors.RESET)
-        trigger.delete()
 
         logger.info(self.bcolors.YELLOW+f"Delete db.." +self.bcolors.RESET)
         schema.delete()
@@ -217,16 +216,16 @@ class TriggerProcess():
             time.sleep(2)
 
             logger.info(self.bcolors.GREEN+"Inner Join entre la tabla custom y la principal."+self.bcolors.RESET)
-           
-            self.cursor.execute(
-                f"""SELECT c.*, cc.operacion, cc.ultima_actualizacion
+
+            queryinner = f"""SELECT c.*, cc.operacion, cc.ultima_actualizacion
                     FROM {self.dbname}.{self.tablename} c
                     INNER JOIN (
                         SELECT pk, operacion, MAX(ultima_actualizacion) AS ultima_actualizacion
                         FROM {self.dbname}.{self.tablename}_custom
                         GROUP BY pk, operacion
                     ) cc ON c.id = cc.pk;"""
-            )
+
+            self.cursor.execute(queryinner)
             inner_rows = self.cursor.fetchall()
             for fila in inner_rows:
                 time.sleep(0.2)
@@ -241,15 +240,7 @@ class TriggerProcess():
 
 
             logger.info(self.bcolors.GREEN+ f"Ultimo Update para el PK {self.pkupdate} y el primer Insert para el PK {self.pkinsert}"  +self.bcolors.RESET)
-            self.cursor.execute(
-                f"""SELECT c.*, cc.operacion, cc.ultima_actualizacion
-                    FROM {self.dbname}.{self.tablename} c
-                    INNER JOIN (
-                        SELECT pk, operacion, MAX(ultima_actualizacion) AS ultima_actualizacion
-                        FROM {self.dbname}.{self.tablename}_custom
-                        GROUP BY pk, operacion
-                    ) cc ON c.id = cc.pk;"""
-            )
+            self.cursor.execute(queryinner)
             inner_rows = self.cursor.fetchall()
             for fila in inner_rows:
                 time.sleep(0.2)
