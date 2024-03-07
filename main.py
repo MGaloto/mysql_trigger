@@ -3,7 +3,6 @@ import mysql.connector
 from datetime import datetime
 from faker import Faker
 import time
-from configdb import Schema, Table, CustomTable, Trigger
 import logging
 
 
@@ -22,7 +21,11 @@ class TriggerProcess():
         self.cursor = self.conn.cursor()
         self.dbname = 'database_prueba'
         self.tablename = 'clientes'
-        self.insert_rows = 400
+        self.tablecustom = self.tablename + '_custom'
+        self.triggername = self.tablename + '_trigger'
+        self.triggerinsert = self.triggername + '_insert'
+        self.triggerupdate = self.triggername + '_update'
+        self.insert_rows = 50
         self.pkupdate = 1
         self.pkinsert = 999999
 
@@ -81,18 +84,75 @@ class TriggerProcess():
         max_id = self.cursor.fetchone()[0]
         return int(max_id)
     
-    def delete(self, table, custom_table, trigger, schema):
+    def createSchema(self):
+        self.cursor.execute(f"""CREATE SCHEMA IF NOT EXISTS {self.dbname};""")
+
+    def deleteSchema(self):
+        self.cursor.execute(f"""DROP SCHEMA IF EXISTS {self.dbname};""")
+
+    def createTable(self):
+        self.cursor.execute(
+            f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablename} (
+                id INT PRIMARY KEY,
+                name VARCHAR(255),
+                email VARCHAR(255),
+                address VARCHAR(255)
+            );"""
+        )
+
+    def deleteTable(self):
+        self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablename};""")
+
+    def createCustomTable(self):
+        self.cursor.execute(
+            f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablecustom} (
+                pk INT,
+                operacion VARCHAR(50),
+                ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            );"""
+        )
+
+    def createTrigger(self):
+        self.cursor.execute(
+            f"""CREATE TRIGGER {self.triggerinsert}
+                AFTER INSERT ON {self.tablename}
+                FOR EACH ROW
+                BEGIN
+                    INSERT INTO {self.tablecustom} (pk, operacion, ultima_actualizacion)
+                    VALUES (NEW.id, 'insert', NOW());
+                END"""
+        )
+
+        self.cursor.execute(
+            f"""CREATE TRIGGER {self.triggerupdate}
+                AFTER UPDATE ON {self.tablename}
+                FOR EACH ROW
+                BEGIN
+                    INSERT INTO {self.tablecustom} (pk, operacion, ultima_actualizacion)
+                    VALUES (NEW.id, 'update', NOW());
+                END"""
+        )
+
+    def deleteTrigger(self):
+        self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerinsert};""")
+
+        self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerupdate};""")
+
+    def deleteCustomTable(self):
+        self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablecustom};""")
+    
+    def delete(self):
         logger.info(self.bcolors.YELLOW+f"Delete trigger.." +self.bcolors.RESET)
-        trigger.delete()
+        self.deleteTrigger()
 
         logger.info(self.bcolors.YELLOW+f"Delete table.." +self.bcolors.RESET)
-        table.delete()
+        self.deleteTable()
 
         logger.info(self.bcolors.YELLOW+f"Delete custom table.." +self.bcolors.RESET)
-        custom_table.delete()
+        self.deleteCustomTable()
 
         logger.info(self.bcolors.YELLOW+f"Delete db.." +self.bcolors.RESET)
-        schema.delete()
+        self.deleteSchema()
     
     
 
@@ -115,10 +175,8 @@ class TriggerProcess():
     def run(self):
         logger.info("Iniciando el proceso..")
         try:
-            schema = Schema(self.cursor, self.dbname, self.tablename)
-            schema.create()
-            table = Table(self.cursor, self.dbname, self.tablename)
-            table.create()
+            self.createSchema()
+            self.createTable()
             logger.info(self.bcolors.YELLOW+ f"Ok Schema y Table: {self.dbname}.{self.tablename}" +self.bcolors.RESET)
             time.sleep(1)
             
@@ -168,16 +226,15 @@ class TriggerProcess():
 
             print(self.bcolors.YELLOW+ f"Creando una tabla custom para: {self.dbname}.{self.tablename}" +self.bcolors.RESET)
             time.sleep(1)
-            custom_table = CustomTable(self.cursor, self.dbname, self.tablename)
-            custom_table.create()
+            self.createCustomTable()
 
             print(self.bcolors.YELLOW+ f"Creando un trigger para: {self.dbname}.{self.tablename}" +self.bcolors.RESET)
             time.sleep(4)
-            trigger = Trigger(self.cursor, self.dbname, self.tablename)
-            trigger.create()
+            self.createTrigger()
 
             logger.info(self.bcolors.YELLOW+ f"Insertando un dato en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkinsert}"  +self.bcolors.RESET)
             time.sleep(2)
+
             name, email, address = self.getData()
             dict = {
                 'id' : self.pkinsert,
@@ -247,12 +304,12 @@ class TriggerProcess():
                 print(fila)
 
 
-            self.delete(table, custom_table, trigger, schema)
+            self.delete()
 
 
         except Exception  as e:
             print(f"Error: {e}")
-            self.delete(table, custom_table, trigger, schema)
+            self.delete()
 
         self.conn.commit()
 
