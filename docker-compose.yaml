@@ -4,11 +4,10 @@ services:
     image: mysql:latest
     restart: always
     environment:
-      MYSQL_DATABASE: db
       MYSQL_ROOT_PASSWORD: root
     ports:
       - '3306:3306'
     volumes:
       - type: "bind"
-        source: "${WORKING_DIR}"
-        target: "/home"
+        source: "${WORKING_DIR}/data"
+        target: "/var/lib/mysql"

@@ -1,14 +1,13 @@
-
 import mysql.connector
 from datetime import datetime
 from faker import Faker
 import time
+from configdb import Schema, Table, CustomTable, Trigger
 import logging
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 
 
@@ -21,11 +20,8 @@ class TriggerProcess():
         self.cursor = self.conn.cursor()
         self.dbname = 'database_prueba'
         self.tablename = 'clientes'
-        self.tablecustom = self.tablename + '_custom'
-        self.triggername = self.tablename + '_trigger'
-        self.triggerinsert = self.triggername + '_insert'
-        self.triggerupdate = self.triggername + '_update'
-        self.insert_rows = 50
+        self.initialRows = 10 # rows iniciales a insertar
+        self.insertRows = 30 # 30 rows mas que las rows ya existentes
         self.pkupdate = 1
         self.pkinsert = 999999
 
@@ -63,12 +59,14 @@ class TriggerProcess():
             dicts.append(dict)
         return dicts
     
+
     def getNewData(self, maxRows):
         dicts = []
         maxId = self.getMaxId()
+        fromId = maxId+1
+        toId = maxId+maxRows+1
         print(f"generando {str(maxRows)} datos...")
-        for i in range(maxId+1, maxRows+1):
-            print(f"Dato Nro: {i}")
+        for i in range(fromId, toId):
             name, email, address = self.getData()
             dict = {
                 'id' : i,
@@ -84,155 +82,90 @@ class TriggerProcess():
         max_id = self.cursor.fetchone()[0]
         return int(max_id)
     
-    def createSchema(self):
-        self.cursor.execute(f"""CREATE SCHEMA IF NOT EXISTS {self.dbname};""")
-
-    def deleteSchema(self):
-        self.cursor.execute(f"""DROP SCHEMA IF EXISTS {self.dbname};""")
-
-    def createTable(self):
-        self.cursor.execute(
-            f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablename} (
-                id INT PRIMARY KEY,
-                name VARCHAR(255),
-                email VARCHAR(255),
-                address VARCHAR(255)
-            );"""
-        )
-
-    def deleteTable(self):
-        self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablename};""")
-
-    def createCustomTable(self):
-        self.cursor.execute(
-            f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablecustom} (
-                pk INT,
-                operacion VARCHAR(50),
-                ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
-            );"""
-        )
-
-    def createTrigger(self):
-        self.cursor.execute(
-            f"""CREATE TRIGGER {self.triggerinsert}
-                AFTER INSERT ON {self.tablename}
-                FOR EACH ROW
-                BEGIN
-                    INSERT INTO {self.tablecustom} (pk, operacion, ultima_actualizacion)
-                    VALUES (NEW.id, 'insert', NOW());
-                END"""
-        )
-
-        self.cursor.execute(
-            f"""CREATE TRIGGER {self.triggerupdate}
-                AFTER UPDATE ON {self.tablename}
-                FOR EACH ROW
-                BEGIN
-                    INSERT INTO {self.tablecustom} (pk, operacion, ultima_actualizacion)
-                    VALUES (NEW.id, 'update', NOW());
-                END"""
-        )
-
-    def deleteTrigger(self):
-        self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerinsert};""")
-
-        self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerupdate};""")
-
-    def deleteCustomTable(self):
-        self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablecustom};""")
+    def insertData(self, data):
+        for d in data:
+            query = f"INSERT INTO {self.dbname}.{self.tablename} (id, name, email, address) VALUES (%s, %s, %s, %s);"
+            valores = (d['id'], d['name'], d['email'], d['address'])
+            self.cursor.execute(query, valores)
     
-    def delete(self):
-        logger.info(self.bcolors.YELLOW+f"Delete trigger.." +self.bcolors.RESET)
-        self.deleteTrigger()
+    def infoLogger(self, message):
+        logger.info(self.bcolors.YELLOW+ message  +self.bcolors.RESET)
 
-        logger.info(self.bcolors.YELLOW+f"Delete table.." +self.bcolors.RESET)
-        self.deleteTable()
-
-        logger.info(self.bcolors.YELLOW+f"Delete custom table.." +self.bcolors.RESET)
-        self.deleteCustomTable()
-
-        logger.info(self.bcolors.YELLOW+f"Delete db.." +self.bcolors.RESET)
-        self.deleteSchema()
+    def getSelect(self, table):
+        self.cursor.execute(f"SELECT * FROM {table} LIMIT 5;")
+        totalRows = self.cursor.fetchall()
+        return totalRows
     
-    
+    def getCount(self, table):
+        self.cursor.execute(f"SELECT COUNT(*) FROM {table};")
+        rowsCount = self.cursor.fetchone()[0]
+        return rowsCount
+
 
     def connect(self):
         try:
-
+            print('Conectando..')
             conn = mysql.connector.connect(
                     user='root', 
                     password='root', 
                     host='127.0.0.1', 
-                    port="3306", 
-                    database='db'
+                    port="3306"
                 )
-            
+
         except Exception  as e:
             print(f"Error: {e}")
         return conn
-    
+
 
     def run(self):
-        logger.info("Iniciando el proceso..")
+        self.infoLogger(message="Iniciando el proceso..")
         try:
-            self.createSchema()
-            self.createTable()
-            logger.info(self.bcolors.YELLOW+ f"Ok Schema y Table: {self.dbname}.{self.tablename}" +self.bcolors.RESET)
+            schema = Schema(self.cursor, self.dbname, self.tablename)
+            schema.create()
+            
+            table = Table(self.cursor, self.dbname, self.tablename)
+            table.create()
+
+            self.infoLogger(message=f"Ok Schema y Table: {self.dbname}.{self.tablename}")
             time.sleep(1)
             
             self.cursor.execute(f"""USE {self.dbname};""")
 
-            initialRows = 10
-            data = self.getInitialData(initialRows)
-            logger.info(self.bcolors.YELLOW+ f"Insertando {str(initialRows)} filas iniciales.."  +self.bcolors.RESET)
-           
-            for d in data:
-                query = f"INSERT INTO {self.dbname}.{self.tablename} (id, name, email, address) VALUES (%s, %s, %s, %s);"
-                valores = (d['id'], d['name'], d['email'], d['address'])
-                self.cursor.execute(query, valores)
-
-            self.cursor.execute(f"SELECT COUNT(*) FROM {self.dbname}.{self.tablename};")
-            recuento_filas = self.cursor.fetchone()[0]
-            logger.info(self.bcolors.YELLOW+ f"Total de filas iniciales de la tabla : {str(recuento_filas)}"   +self.bcolors.RESET)
-           
+            data = self.getInitialData(self.initialRows)
+            self.infoLogger(message=f"Insertando {str(self.initialRows)} filas iniciales..")
+            self.insertData(data)
             time.sleep(2)
 
-            self.cursor.execute(f"SELECT * FROM {self.dbname}.{self.tablename} LIMIT 5;")
-            total_rows = self.cursor.fetchall()
-            logger.info(self.bcolors.YELLOW+ f"Primeras filas de la tabla.."  +self.bcolors.RESET)
+            total_rows = self.getSelect(table=f"{self.dbname}.{self.tablename}")
+            self.infoLogger(message=f"Primeras filas de la tabla..")
             for fila in total_rows:
                 time.sleep(0.5)
                 print(fila)
 
-            newData = self.getNewData(maxRows=int(self.insert_rows ))
-            logger.info(self.bcolors.YELLOW+ f"Total de filas a ingresar : {len(newData)}"  +self.bcolors.RESET)
-            for d in newData:
-                query = f"INSERT INTO {self.dbname}.{self.tablename} (id, name, email, address) VALUES (%s, %s, %s, %s);"
-                valores = (d['id'], d['name'], d['email'], d['address'])
-                self.cursor.execute(query, valores)
+            newData = self.getNewData(maxRows=int(self.insertRows ))
+            self.infoLogger(message=f"Total de filas a ingresar : {len(newData)}")
+            self.insertData(newData)
 
-            self.cursor.execute(f"SELECT COUNT(*) FROM {self.dbname}.{self.tablename};")
-            recuento_filas_nuevas = self.cursor.fetchone()[0]
-            logger.info(self.bcolors.YELLOW+ f"Total de filas finales de la tabla : {self.dbname}.{self.tablename}: {recuento_filas_nuevas}"  +self.bcolors.RESET)
+            recuento_filas_nuevas = self.getCount(table=f"{self.dbname}.{self.tablename}")
+            self.infoLogger(message=f"Total de filas finales de la tabla : {self.dbname}.{self.tablename}: {recuento_filas_nuevas}")
             time.sleep(2)
 
-            self.cursor.execute(f"SELECT * FROM {self.dbname}.{self.tablename} LIMIT 20;")
-            total_new_rows = self.cursor.fetchall()
-            logger.info(self.bcolors.YELLOW+ f"Primeras filas de los nuevos registros.."  +self.bcolors.RESET)
-            
+            total_new_rows = self.getSelect(table=f"{self.dbname}.{self.tablename}")
+            self.infoLogger(message=f"Primeras filas de los nuevos registros..")
             for fila in total_new_rows:
                 time.sleep(0.5)
                 print(fila)
 
-            print(self.bcolors.YELLOW+ f"Creando una tabla custom para: {self.dbname}.{self.tablename}" +self.bcolors.RESET)
+            self.infoLogger(message=f"Creando una tabla custom para: {self.dbname}.{self.tablename}")
             time.sleep(1)
-            self.createCustomTable()
-
-            print(self.bcolors.YELLOW+ f"Creando un trigger para: {self.dbname}.{self.tablename}" +self.bcolors.RESET)
+            customTable = CustomTable(self.cursor, self.dbname, self.tablename)
+            customTable.create()
+            self.infoLogger(message=f"Creando un trigger para: {self.dbname}.{self.tablename}")
             time.sleep(4)
-            self.createTrigger()
+            trigger = Trigger(self.cursor, self.dbname, self.tablename)
+            trigger.create()
 
-            logger.info(self.bcolors.YELLOW+ f"Insertando un dato en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkinsert}"  +self.bcolors.RESET)
+            self.infoLogger(message=f"Insertando un dato en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkinsert}")
             time.sleep(2)
 
             name, email, address = self.getData()
@@ -243,37 +176,31 @@ class TriggerProcess():
                 'address' : address
             }
             newData = [dict]
-            logger.info(self.bcolors.YELLOW+ f"Total de filas a ingresar : {len(newData)}"  +self.bcolors.RESET)
-            
-            for d in newData:
-                query = f"INSERT INTO {self.dbname}.{self.tablename} (id, name, email, address) VALUES (%s, %s, %s, %s);"
-                valores = (d['id'], d['name'], d['email'], d['address'])
-                self.cursor.execute(query, valores)
+            self.infoLogger(message=f"Total de filas a ingresar : {len(newData)}")
+            self.insertData(newData)
 
-
-            logger.info(self.bcolors.YELLOW+ f"Actualizando un dato en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkupdate}"  +self.bcolors.RESET)
-            
+            self.infoLogger(message=f"Actualizando un dato en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkupdate}") 
             time.sleep(2)
             query = f"UPDATE {self.dbname}.{self.tablename} SET name = %s WHERE id = %s;"
             valores = ('newname', self.pkupdate)
             self.cursor.execute(query, valores)
 
-            logger.info(self.bcolors.YELLOW+ f"Verificando el PK del Insert ({self.pkinsert}) y del New Update ({self.pkupdate}) en la tabla custom: {self.dbname}.{self.tablename}_custom" +self.bcolors.RESET)
-           
-            self.cursor.execute(f"SELECT * FROM {self.dbname}.{self.tablename}_custom;")
-            customtable = self.cursor.fetchall()
-            logger.info(self.bcolors.YELLOW+f"Primeras filas de la custom table.." +self.bcolors.RESET)
+            self.infoLogger(message=f"Verificando el PK del Insert ({self.pkinsert}) y del New Update ({self.pkupdate}) en la tabla custom: {self.dbname}.{self.tablename}_custom")
+            
+            customtable = self.getSelect(table=f"{self.dbname}.{self.tablename}_custom")
+            self.infoLogger(message=f"Primeras filas de la custom table..")
+            
            
             time.sleep(2)
             for fila in customtable:
                 time.sleep(2)
                 print(fila)
-            logger.info(self.bcolors.GREEN+"Coinciden los PK actualizados e insertados...!"+self.bcolors.RESET)
+            self.infoLogger(message="Coinciden los PK actualizados e insertados...!")
+            
            
             time.sleep(2)
-
-            logger.info(self.bcolors.GREEN+"Inner Join entre la tabla custom y la principal."+self.bcolors.RESET)
-
+            self.infoLogger(message="Inner Join entre la tabla custom y la principal.")
+            
             queryinner = f"""SELECT c.*, cc.operacion, cc.ultima_actualizacion
                     FROM {self.dbname}.{self.tablename} c
                     INNER JOIN (
@@ -289,32 +216,52 @@ class TriggerProcess():
                 print(fila)
 
 
-            logger.info(self.bcolors.YELLOW+ f"Actualizando el mismo dato que antes en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkupdate}"  +self.bcolors.RESET)
+            self.infoLogger(message=f"Actualizando el mismo dato que antes en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkupdate}")
+            
             time.sleep(2)
             query = f"UPDATE {self.dbname}.{self.tablename} SET name = %s WHERE id = %s;"
             valores = ('newname_2', self.pkupdate)
             self.cursor.execute(query, valores)
 
-
-            logger.info(self.bcolors.GREEN+ f"Ultimo Update para el PK {self.pkupdate} y el primer Insert para el PK {self.pkinsert}"  +self.bcolors.RESET)
+            self.infoLogger(message=f"Ultimo Update para el PK {self.pkupdate} y el primer Insert para el PK {self.pkinsert}")
+            
             self.cursor.execute(queryinner)
             inner_rows = self.cursor.fetchall()
             for fila in inner_rows:
                 time.sleep(0.2)
                 print(fila)
 
-
-            self.delete()
+            self.infoLogger(message="Delete..")
+            trigger.delete()
+            table.delete()
+            customTable.delete()
+            schema.delete()
 
 
         except Exception  as e:
             print(f"Error: {e}")
-            self.delete()
+            try:
+                trigger.delete()
+            except:
+                pass
+            try:
+                table.delete()
+            except:
+                pass
+            try:
+                customTable.delete()
+            except:
+                pass
+            try:
+                schema.delete()
+            except:
+                pass
 
         self.conn.commit()
+        self.cursor.close()
+        self.conn.close()
 
     
-
 if __name__ == "__main__":
     obj = TriggerProcess()
     obj.run()
