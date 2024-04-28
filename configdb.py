@@ -6,10 +6,10 @@ class DatabaseObject():
         self.dbname = dbname
         self.tablename = tablename
 
-    def create(self):
+    def create(self) -> None:
         pass
 
-    def delete(self):
+    def delete(self) -> None:
         pass
 
 
@@ -18,10 +18,10 @@ class Schema(DatabaseObject):
     def __init__(self, cursor, dbname, tablename):
         super().__init__(cursor, dbname, tablename)
 
-    def create(self):
+    def create(self) -> None:
         self.cursor.execute(f"""CREATE SCHEMA IF NOT EXISTS {self.dbname};""")
 
-    def delete(self):
+    def delete(self) -> None:
         self.cursor.execute(f"""DROP SCHEMA IF EXISTS {self.dbname};""")
 
 
@@ -30,7 +30,7 @@ class Table(DatabaseObject):
     def __init__(self, cursor, dbname, tablename):
         super().__init__(cursor, dbname, tablename)
 
-    def create(self):
+    def create(self) -> None:
         self.cursor.execute(
             f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablename} (
                 id INT PRIMARY KEY,
@@ -40,7 +40,7 @@ class Table(DatabaseObject):
             );"""
         )
 
-    def delete(self):
+    def delete(self) -> None:
         self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablename};""")
 
 
@@ -50,7 +50,7 @@ class CustomTable(DatabaseObject):
         super().__init__(cursor, dbname, tablename)
         self.tablecustom = tablename + '_custom'
 
-    def create(self):
+    def create(self) -> None:
         self.cursor.execute(
             f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablecustom} (
                 pk INT,
@@ -59,7 +59,7 @@ class CustomTable(DatabaseObject):
             );"""
         )
 
-    def delete(self):
+    def delete(self) -> None:
         self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablecustom};""")
 
 
@@ -73,7 +73,7 @@ class Trigger(DatabaseObject):
         self.triggerinsert = self.triggername + '_insert'
         self.triggerupdate = self.triggername + '_update'
 
-    def create(self):
+    def create(self) -> None:
         self.cursor.execute(
             f"""CREATE TRIGGER {self.triggerinsert}
                 AFTER INSERT ON {self.tablename}
@@ -94,7 +94,7 @@ class Trigger(DatabaseObject):
                 END"""
         )
 
-    def delete(self):
+    def delete(self) -> None:
         self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerinsert};""")
 
         self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerupdate};""")

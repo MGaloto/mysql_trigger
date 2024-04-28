@@ -4,7 +4,7 @@ from faker import Faker
 import time
 from configdb import Schema, Table, CustomTable, Trigger
 import logging
-
+from typing import List, Dict, Any, Tuple
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ class TriggerProcess():
         self.insertRows = 30 # 30 rows mas que las rows ya existentes
         self.pkupdate = 1
         self.pkinsert = 999999
+        self.faker = Faker()
 
 
     class bcolors:
@@ -33,22 +34,21 @@ class TriggerProcess():
         RESET = '\033[0m' 
 
 
-    def getDateNow(self):
+    def getDateNow(self) -> str:
         fecha_hora_actual = datetime.now()
         formato = "%Y-%m-%d %H:%M:%S.%f"
         date = fecha_hora_actual.strftime(formato)[:-3]
         return date
     
-    def getData(self):
-        faker = Faker()
-        name = faker.name()
-        email = faker.email()
-        address = faker.address()
+    def getData(self) -> tuple[str, str, str]:
+        name = self.faker.name()
+        email = self.faker.email()
+        address = self.faker.address()
         return name, email, address
 
-    def getInitialData(self, initalrows):
+    def getInitialData(self, initialrows: int) -> List[Dict[str, str]]:
         dicts = []
-        for rows in range(1, initalrows+1):
+        for rows in range(1, initialrows+1):
             name, email, address = self.getData()
             dict = {
                 'id' : rows,
@@ -60,7 +60,7 @@ class TriggerProcess():
         return dicts
     
 
-    def getNewData(self, maxRows):
+    def getNewData(self, maxRows: int) -> List[Dict[str, str]]:
         dicts = []
         maxId = self.getMaxId()
         fromId = maxId+1
@@ -77,12 +77,12 @@ class TriggerProcess():
             dicts.append(dict)
         return dicts
     
-    def getMaxId(self):
+    def getMaxId(self) -> int:
         self.cursor.execute(f"""SELECT MAX(id) FROM {self.dbname}.{self.tablename};""")
         max_id = self.cursor.fetchone()[0]
         return int(max_id)
     
-    def insertData(self, data):
+    def insertData(self, data: List[Dict[str, Any]]) -> None:
         for d in data:
             query = f"INSERT INTO {self.dbname}.{self.tablename} (id, name, email, address) VALUES (%s, %s, %s, %s);"
             valores = (d['id'], d['name'], d['email'], d['address'])
@@ -91,12 +91,12 @@ class TriggerProcess():
     def infoLogger(self, message):
         logger.info(self.bcolors.YELLOW+ message  +self.bcolors.RESET)
 
-    def getSelect(self, table):
+    def getSelect(self, table: str) -> List[Tuple[Any]]:
         self.cursor.execute(f"SELECT * FROM {table} LIMIT 5;")
         totalRows = self.cursor.fetchall()
         return totalRows
     
-    def getCount(self, table):
+    def getCount(self, table: str) -> int:
         self.cursor.execute(f"SELECT COUNT(*) FROM {table};")
         rowsCount = self.cursor.fetchone()[0]
         return rowsCount
