@@ -2,9 +2,18 @@ import mysql.connector
 from datetime import datetime
 from faker import Faker
 import time
-from configdb import Schema, Table, CustomTable, Trigger
 import logging
 from typing import List, Dict, Any, Tuple
+from dotenv import load_dotenv
+import os
+
+
+load_dotenv(override=True)
+user = os.getenv("USER")
+password = os.getenv("PASS")
+host = os.getenv("HOST")
+port= os.getenv("PORT")
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,12 +23,24 @@ logger = logging.getLogger(__name__)
 
 class TriggerProcess():
 
-    def __init__(self):
+    def __init__(self,
+                 host: str, 
+                 user: str, 
+                 password: str, 
+                 port: str) -> None:
+        self.host = host
+        self.user = user
+        self.password = password
+        self.port = port
         self.date = self.getDateNow()
-        self.conn = self.connect()
-        self.cursor = self.conn.cursor()
+        self.conn = None
+        self.cursor = None
         self.dbname = 'database_prueba'
         self.tablename = 'clientes'
+        self.tablecustom = self.tablename + '_custom'
+        self.triggername = self.tablename + '_trigger'
+        self.triggerinsert = self.triggername + '_insert'
+        self.triggerupdate = self.triggername + '_update'
         self.initialRows = 10 # rows iniciales a insertar
         self.insertRows = 30 # 30 rows mas que las rows ya existentes
         self.pkupdate = 1
@@ -32,6 +53,57 @@ class TriggerProcess():
         YELLOW = '\033[93m'  
         RED = '\033[91m'  
         RESET = '\033[0m' 
+
+    def createSchema(self) -> None:
+        self.cursor.execute(f"""DROP SCHEMA IF EXISTS {self.dbname};""")
+        self.cursor.execute(f"""CREATE SCHEMA IF NOT EXISTS {self.dbname};""")
+
+
+    def createTable(self) -> None:
+        self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablename};""")
+        self.cursor.execute(
+            f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablename} (
+                id INT PRIMARY KEY,
+                name VARCHAR(255),
+                email VARCHAR(255),
+                address VARCHAR(255)
+            );"""
+        )
+
+
+
+    def createCustomTable(self) -> None:
+        self.cursor.execute(f"""DROP TABLE IF EXISTS {self.dbname}.{self.tablecustom};""")
+        self.cursor.execute(
+            f"""CREATE TABLE IF NOT EXISTS {self.dbname}.{self.tablecustom} (
+                pk INT,
+                operacion VARCHAR(50),
+                ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            );"""
+        )
+
+    def createTriggers(self) -> None:
+        self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerinsert};""")
+        self.cursor.execute(
+            f"""CREATE TRIGGER {self.triggerinsert}
+                AFTER INSERT ON {self.tablename}
+                FOR EACH ROW
+                BEGIN
+                    INSERT INTO {self.tablecustom} (pk, operacion, ultima_actualizacion)
+                    VALUES (NEW.id, 'insert', NOW());
+                END"""
+        )
+
+        self.cursor.execute(f"""DROP TRIGGER IF EXISTS {self.triggerupdate};""")
+        self.cursor.execute(
+            f"""CREATE TRIGGER {self.triggerupdate}
+                AFTER UPDATE ON {self.tablename}
+                FOR EACH ROW
+                BEGIN
+                    INSERT INTO {self.tablecustom} (pk, operacion, ultima_actualizacion)
+                    VALUES (NEW.id, 'update', NOW());
+                END"""
+        )
 
 
     def getDateNow(self) -> str:
@@ -101,31 +173,26 @@ class TriggerProcess():
         rowsCount = self.cursor.fetchone()[0]
         return rowsCount
 
-
     def connect(self):
         try:
-            print('Conectando..')
-            conn = mysql.connector.connect(
-                    user='root', 
-                    password='root', 
-                    host='127.0.0.1', 
-                    port="3306"
+            self.conn = mysql.connector.connect(
+                    user=self.user, 
+                    password=self.password, 
+                    host=self.host, 
+                    port=str(self.port)
                 )
-
+            print(self.conn)
+            self.cursor = self.conn.cursor()
         except Exception  as e:
-            print(f"Error: {e}")
-        return conn
+            print(f"Error: {logger.error(self.bcolors.RED+ str(e)  +self.bcolors.RESET)}")
 
 
     def run(self):
         self.infoLogger(message="Iniciando el proceso..")
         try:
-            schema = Schema(self.cursor, self.dbname, self.tablename)
-            schema.create()
-            
-            table = Table(self.cursor, self.dbname, self.tablename)
-            table.create()
-
+            self.connect()
+            self.createSchema()
+            self.createTable()
             self.infoLogger(message=f"Ok Schema y Table: {self.dbname}.{self.tablename}")
             time.sleep(1)
             
@@ -134,7 +201,7 @@ class TriggerProcess():
             data = self.getInitialData(self.initialRows)
             self.infoLogger(message=f"Insertando {str(self.initialRows)} filas iniciales..")
             self.insertData(data)
-            time.sleep(2)
+            time.sleep(1)
 
             total_rows = self.getSelect(table=f"{self.dbname}.{self.tablename}")
             self.infoLogger(message=f"Primeras filas de la tabla..")
@@ -158,12 +225,10 @@ class TriggerProcess():
 
             self.infoLogger(message=f"Creando una tabla custom para: {self.dbname}.{self.tablename}")
             time.sleep(1)
-            customTable = CustomTable(self.cursor, self.dbname, self.tablename)
-            customTable.create()
+            self.createCustomTable()
             self.infoLogger(message=f"Creando un trigger para: {self.dbname}.{self.tablename}")
             time.sleep(4)
-            trigger = Trigger(self.cursor, self.dbname, self.tablename)
-            trigger.create()
+            self.createTriggers()
 
             self.infoLogger(message=f"Insertando un dato en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkinsert}")
             time.sleep(2)
@@ -215,7 +280,6 @@ class TriggerProcess():
                 time.sleep(0.2)
                 print(fila)
 
-
             self.infoLogger(message=f"Actualizando el mismo dato que antes en la tabla principal: {self.dbname}.{self.tablename} con el PK: {self.pkupdate}")
             
             time.sleep(2)
@@ -231,31 +295,9 @@ class TriggerProcess():
                 time.sleep(0.2)
                 print(fila)
 
-            self.infoLogger(message="Delete..")
-            trigger.delete()
-            table.delete()
-            customTable.delete()
-            schema.delete()
-
 
         except Exception  as e:
             print(f"Error: {e}")
-            try:
-                trigger.delete()
-            except:
-                pass
-            try:
-                table.delete()
-            except:
-                pass
-            try:
-                customTable.delete()
-            except:
-                pass
-            try:
-                schema.delete()
-            except:
-                pass
 
         self.conn.commit()
         self.cursor.close()
@@ -263,6 +305,6 @@ class TriggerProcess():
 
     
 if __name__ == "__main__":
-    obj = TriggerProcess()
+    obj = TriggerProcess(host=host, user=user, password=password, port=port)
     obj.run()
     print("Finish TriggerProcess")
